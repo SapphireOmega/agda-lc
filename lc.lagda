@@ -369,7 +369,7 @@ Examples:
        →⟨ β ⟩   "y" ↦ "w" ↦ ` "z"
        →⟨ α {v = "x"} ⟩
                 "x" ↦ "w" ↦ ` "z"
-       →⟨ λ-body $ α ⟩
+       →⟨ λ-body α ⟩
                 "x" ↦ "y" ↦ ` "z"
        λ-end
 \end{code}
