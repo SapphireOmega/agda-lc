@@ -183,7 +183,7 @@ For example:
   _ = freeVars (("a" ↦ "b" ↦ ` "a") ‿ ` "x" ‿ ` "y") ≡ "x" ∷ "y" ∷ [] ∋ refl
   _ = freeVars ("a" ↦ ` "b" ‿ ` "a") ≡ "b" ∷ [] ∋ refl
   -- From the slides:
-  _ = freeVars (` "x" ‿ (("x" ↦ ` "x" ‿ ` "y")) ‿ ` "x") ≡ "x" ∷ "y" ∷ "x" ∷ [] ∋ refl
+  _ = freeVars (` "x" ‿ (("x" ↦ ` "x" ‿ ` "y") ‿ ` "x")) ≡ "x" ∷ "y" ∷ "x" ∷ [] ∋ refl
 \end{code}
 
 We can also write a function to find all the names of the bound variables.
@@ -197,7 +197,7 @@ We can also write a function to find all the names of the bound variables.
   _ = boundVars (("a" ↦ "b" ↦ ` "a") ‿ ` "x" ‿ ` "y") ≡ "a" ∷ "b" ∷ [] ∋ refl
   _ = boundVars ("a" ↦ ` "b" ‿ ` "a") ≡ "a" ∷ [] ∋ refl
   -- From the slides:
-  _ = boundVars (` "x" ‿ (("x" ↦ ` "x" ‿ ` "y")) ‿ ` "x") ≡ "x" ∷ [] ∋ refl
+  _ = boundVars (` "x" ‿ (("x" ↦ ` "x" ‿ ` "y") ‿ ` "x")) ≡ "x" ∷ [] ∋ refl
 \end{code}
 
 Of course, there may be overlap between the results of \verb#freeVars# and \verb#boundVars#, because we are only looking for the names of variables that are bound or free; a name may be used for a bound variable in one subexpression, but a free one in another.
@@ -253,7 +253,7 @@ Examples:
 
 \subsection{β-Reduction}\label{reduc}
 
-Now we get to the crux of the matter: \textit{β-reduction}. β-Reduction explains how we compute λ-terms, namely, if we apply a λ-abstraction to a λ-term, we can obtain a new λ-term by substituting the term we are applying to for the bound variable in the body of the abstraction. We will also add recursive calls for β-reduction when talking about expressions other than functions, so we will just reduce the first application we encounter.
+Now we get to the crux of the matter: \textit{β-reduction}. β-Reduction explains how we compute λ-terms, namely, if we apply a λ-abstraction to a λ-term, we can obtain a new λ-term by substituting the term we are applying to for the bound variable in the body of the abstraction. We will also add recursive calls for β-reduction when talking about terms other than abstractions so we will just reduce the first application we encounter.
 
 \begin{code}
   β-reduc : Λ → Maybe Λ
@@ -277,11 +277,52 @@ Examples:
        ≡ just (` "y" ‿ (` "z" ‿ ` "z")) ∋ refl
 \end{code}
 
-Now that we have given computational meaning to applications of λ-abstractions, we will interchangeably call λ-abstractions (λ-)functions, since now they actually \enquote{function}.
+Now that we have given computational meaning to applications of λ-abstractions, we will interchangeably call λ-abstractions (λ-)functions, since now they actually \enquote{function}. They are actually \textit{anonymous pure unary functions}: we can write them without having to give them a name, they take only one input, and the output only depends on the input (which is true in mathematics per se, but not in computer science).
+
+\subsection{η-Reduction}
+
+\textit{η-Reduction} is an optional second reduction rule some people choose to extend the λ-calculus with. We will discover its purpose through a little example.
+
+Consider the following two lambda expressions:
+
+\begin{code}
+  _ = ` "a"
+  _ = "x" ↦ ` "a" ‿ ` "x"
+\end{code}
+
+These λ-terms are obviously not the same, nor can either be β-reduced. But what if we apply both to the same argument \verb#` "b"#?
+
+\begin{code}
+  _ = ` "a" ‿ ` "b"
+  _ = β-reduc (("x" ↦ ` "a" ‿ ` "x") ‿ ` "b") ≡ just (` "a" ‿ ` "b") ∋ refl
+\end{code}
+
+They compute to the same expression \verb#` "a" ‿ ` "b"#. In a sense, the first two expressions are the same, because they do the same. This is an instance of \textit{function extensionality}. The second λ-term just wraps \verb#` "a"# in a function, but we cannot unwrap such a wrapped value, or \enquote{reduce} it in a sense. It may be desireable to be able to do this, and that is what η-reduction enables.
+
+\begin{code}
+  η-reduc : ∀ String → Λ → Maybe Λ
+  η-reduc x (v ↦ e ‿ ` v') = -- Main definition
+    if x =ₛ v ∧ x =ₛ v' ∧ not (contains (freeVars e) v)
+      then just e
+      else map (λ e' → v ↦ e' ‿ ` v') (η-reduc x e)
+  η-reduc x (v ↦ e) = map (v ↦_) (η-reduc x e)
+  η-reduc x (` v) = nothing
+  η-reduc x (e₁ ‿ e₂) with η-reduc x e₁
+  η-reduc x (e₁ ‿ e₂) | nothing = map (e₁ ‿_) (η-reduc x e₂)
+  η-reduc x (e₁ ‿ e₂) | just e₁' = just (e₁' ‿ e₂)
+\end{code}
+
+Like with α-equivalence and β-reduction we add recursive calls to apply it to the first subexpression where η-reduction applies.
+
+Example:
+
+\begin{code}
+  _ = η-reduc "x" ("x" ↦ ` "y" ‿ ` "x") ≡ just (` "y") ∋ refl
+\end{code}
 
 \subsection{Equational Reasoning}
 
-We will create a type which encodes the proposition that some λ-term is reducible to another. These reductions can be done by β-reduction or α-equivalence. Since \verb#β-reduc# and \verb#α-equiv# return \verb#Maybe#'s, we will make the type have a \verb#Maybe# in its right argument.
+We will create a type which encodes the proposition that some λ-term is reducible to another. These reductions can be done by α-equivalence, β-reduction, or η-reduction. Since \verb#α-equiv#, \verb#β-reduc#, and \verb#η-reduc# return \verb#Maybe#'s, we will make the type have a \verb#Maybe# in its right argument.
 
 \begin{code}
   data _→Mλ_ : Λ → Maybe Λ → 𝓤 where
@@ -292,12 +333,7 @@ We will create a type which encodes the proposition that some λ-term is reducib
 \begin{code}
     α        : ∀ {e : Λ} {v : String}  → e →Mλ α-equiv v e
     β        : ∀ {e : Λ}               → e →Mλ β-reduc e
-\end{code}
-
-We will add another reduction rule called \textit{η-reduction}. This is an optional extension to the λ-calculus which we will discuss in the next subsection, so you can ignore it for now.
-
-\begin{code}
-    η        : ∀ {e : Λ} {v : String} → (v ↦ e ‿ ` v) →Mλ just e
+    η        : ∀ {e : Λ} (v : String) → e →Mλ η-reduc v e
 \end{code}
 
 We will add transitivity so we can chain reductions into one larger reduction, where we keep unwrapping the \verb#Maybe# in between. This also means that we cannot form reductions using \verb#nothing#'s. We also add reflexivity, so doing nothing is also a valid reduction. This will be useful when defining equational reasoning with the type.
@@ -372,32 +408,8 @@ Examples:
        →⟨ λ-body α ⟩
                 "x" ↦ "y" ↦ ` "z"
        λ-end
-\end{code}
 
-\subsection{η-Reduction}
-
-In the last subsection we added a second reduction rule called \textit{η-Reduction}, which people sometimes extend the lambda calculus with. It states the following:
-
-\verb#     η : ∀ {e : Λ} {v : String} → (v ↦ e ‿ ` v) →λ e#
-
-We will explain its purpose with a little example. Consider the following two λ-terms:
-
-\begin{code}
-  _ = Λ ∋ ` "a"
-  _ = Λ ∋ "x" ↦ ` "a" ‿ ` "x"
-\end{code}
-
-These λ-terms are obviously not the same, nor can either be β-reduced. But what if we apply both to the same argument \verb#` "b"#?
-
-\begin{code}
-  _ = Λ ∋ ` "a" ‿ ` "b"
-  _ = ("x" ↦ ` "a" ‿ ` "x") ‿ ` "b" →⟨ β ⟩ ` "a" ‿ ` "b" λ-end
-\end{code}
-
-They compute to the same expression \verb#` "a" ‿ ` "b"#. In a sense, the first two expressions are the same, because they do the same. This is an instance of \textit{function extensionality}. The second λ-term just wraps \verb#` "a"# in a function, but this unwrapping cannot be undone, or \enquote{reduced} in a sense. It may be desireable to be able to do this, and that is what η-reduction states.
-
-\begin{code}
-  _ = "x" ↦ ` "a" ‿ ` "x" →⟨ η ⟩ ` "a" λ-end
+  _ = λ-begin ("x" ↦ ` "y" ‿ ` "x") →⟨ η "x" ⟩ ` "y" λ-end
 \end{code}
 
 \section{Syntax}\label{syntax}
@@ -410,6 +422,48 @@ They compute to the same expression \verb#` "a" ‿ ` "b"#. In a sense, the firs
 
 \section{Combinatory Logic}
 
+\subsection{Identity}
+
+\subsection{Flipping with the Cardinal}
+
+\subsection{Selection with the Kite and the Kestrel}
+
+\subsection{Composition with the Blue- and Blackbirds}
+
+\subsection{Storage with the Thrush and Vireo}
+
+\subsection{SKI Combinator Calculus}
+
 \section{Church Encodings}
+
+\subsection{Church Booleans}
+
+\subsubsection{Branching with True and False}
+
+\subsubsection{Negation}
+
+\subsubsection{Boolean And}
+
+\subsubsection{Boolean Or}
+
+\subsubsection{Boolean Xor}
+
+\subsubsection{Boolean Equality}
+
+\subsection{Church Numerals (1/2)}
+
+\subsubsection{Definition}
+
+\subsubsection{Successor}
+
+\subsubsection{Addition}
+
+\subsubsection{Multiplication}
+
+\subsubsection{Exponentiation}
+
+\subsection{Church Pairs and Lists}
+
+\subsection{Church Numerals (2/2)}
 
 \end{document}
